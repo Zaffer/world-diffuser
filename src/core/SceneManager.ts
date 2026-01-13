@@ -60,18 +60,9 @@ export class SceneManager {
     document.body.appendChild(this.renderer.domElement);
     
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.1;
-    
-    // Custom mouse controls:
-    // - Left click (MOUSE.LEFT) = Pan/drag OR select (depending on what's clicked)
-    // - Middle click (MOUSE.MIDDLE) = Rotate/orbit around target
-    // - Right click (MOUSE.RIGHT) = Pan/drag the camera
-    this.controls.mouseButtons = {
-      LEFT: THREE.MOUSE.PAN,      // Left click default to pan (dynamically disabled for selection)
-      MIDDLE: THREE.MOUSE.ROTATE, // Middle click to rotate/orbit
-      RIGHT: THREE.MOUSE.PAN      // Right click to drag/pan
-    };
+    // Using OrbitControls defaults:
+    // - enableDamping: false
+    // - Left click = Rotate, Middle = Dolly/Zoom, Right = Pan
     
     // Add lights
     this.addLights();

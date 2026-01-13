@@ -2,12 +2,25 @@ import * as THREE from "three";
 import { NeuralNetworkStructure } from "../types/model";
 import { SimpleNeuralNetwork } from "../models/NeuralNetworkTrainer";
 import { InteractableType } from "../core/InteractionManager";
+import { createMinimalUNet } from "../models/DiamondModelGenerator";
+import { createMinimalUNetVisualization } from "./DiamondArchitectureVis";
+import { DEFAULT_ARCH_VIS_CONFIG } from "../types/diamond";
 
 export function createNeuralNetworkVisualization(
   networkStructure: NeuralNetworkStructure,
   networkInstance?: SimpleNeuralNetwork
 ): THREE.Group {
   const group = new THREE.Group();
+
+  // Use the full DIAMOND U-Net architecture visualization
+  const unetModel = createMinimalUNet();
+  const architectureVis = createMinimalUNetVisualization(unetModel, DEFAULT_ARCH_VIS_CONFIG);
+  group.add(architectureVis);
+
+  return group;
+
+  // OLD CODE BELOW - will be removed once DIAMOND vis is working
+  const OLD_group = new THREE.Group();
   const layerSpacing = 2;
   const nodeSpacing = 0.5;
   const nodeRadius = 0.2;

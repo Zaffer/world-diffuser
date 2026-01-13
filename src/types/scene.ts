@@ -36,10 +36,10 @@ export const DEFAULT_SCENE_CONFIG: SceneConfig = {
     height: 10
   },
   camera: {
-    fov: 24,
+    fov: 50,
     near: 0.1,
-    far: 100,
-    initialPosition: new THREE.Vector3(30.4, 34.4, 27.1)
+    far: 2000,
+    initialPosition: new THREE.Vector3(0, 0, 5)
   },
   renderer: {
     backgroundColor: 0x1a1a1a,
