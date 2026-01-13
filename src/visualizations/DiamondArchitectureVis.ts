@@ -1,6 +1,6 @@
 /**
  * Full U-Net architecture visualization for DIAMOND
- * Redesigned with clear horizontal U-shape layout
+ * Redesigned with weights visible inline in each block
  */
 
 import * as THREE from 'three';
@@ -8,95 +8,87 @@ import {
   MinimalUNet,
   ArchitectureVisConfig,
   DEFAULT_ARCH_VIS_CONFIG,
+  ConvLayer,
+  ResidualBlock,
 } from '../types/diamond';
 
 /**
  * Create the complete minimal U-Net architecture visualization
- * Horizontal U-shape layout: Encoder (left) → Bottleneck (bottom) → Decoder (right)
+ * Horizontal U-shape layout with inline weight visualizations
  */
 export function createMinimalUNetVisualization(
-  _model: MinimalUNet,
+  model: MinimalUNet,
   config: ArchitectureVisConfig = DEFAULT_ARCH_VIS_CONFIG
 ): THREE.Group {
   const group = new THREE.Group();
 
   // Base unit for all spacing
-  const UNIT = 3;
+  const UNIT = 4;
 
   // ========== LAYOUT POSITIONS ==========
-  // Horizontal U-shape: Left (encoder) → Bottom (bottleneck) → Right (decoder)
-
   const positions = {
-    input: new THREE.Vector3(-UNIT * 3, UNIT * 3, 0),
-    encoder: new THREE.Vector3(-UNIT * 3, 0, 0),
-    downsample: new THREE.Vector3(-UNIT * 3, -UNIT * 1.5, 0),
+    input: new THREE.Vector3(-UNIT * 3.5, UNIT * 3, 0),
+    encoder: new THREE.Vector3(-UNIT * 3.5, 0, 0),
+    downsample: new THREE.Vector3(-UNIT * 3.5, -UNIT * 1.5, 0),
     bottleneck: new THREE.Vector3(0, -UNIT * 3, 0),
-    upsample: new THREE.Vector3(UNIT * 3, -UNIT * 1.5, 0),
-    decoder: new THREE.Vector3(UNIT * 3, 0, 0),
-    output: new THREE.Vector3(UNIT * 3, UNIT * 3, 0),
+    upsample: new THREE.Vector3(UNIT * 3.5, -UNIT * 1.5, 0),
+    decoder: new THREE.Vector3(UNIT * 3.5, 0, 0),
+    output: new THREE.Vector3(UNIT * 3.5, UNIT * 3, 0),
   };
 
   // ========== INPUT CONVOLUTION ==========
-  const inputBlock = createAbstractBlock(
+  const inputBlock = createConvBlockWithWeights(
     'Input Conv',
     '3→8 ch',
-    '[8,4,4]',
-    '#4488ff',
-    new THREE.Vector3(1.2, 1.2, 0.8)
+    model.inputConv,
+    '#4488ff'
   );
   inputBlock.position.copy(positions.input);
   group.add(inputBlock);
 
   // ========== ENCODER STAGE ==========
-  const encoderBlock = createAbstractBlock(
+  const encoderBlock = createResidualBlockWithWeights(
     'Encoder',
-    'Residual Block',
-    '[8,4,4]',
-    '#00aaff',
-    new THREE.Vector3(1.8, 1.8, 1.2)
+    model.encoder.blocks[0],
+    '#00aaff'
   );
   encoderBlock.position.copy(positions.encoder);
   group.add(encoderBlock);
 
   // Downsample indicator
-  const downsampleBlock = createOperationBlock('↓ Downsample ×2', '#ff9900');
+  const downsampleBlock = createOperationBlock('↓ ×2', '#ff9900');
   downsampleBlock.position.copy(positions.downsample);
   group.add(downsampleBlock);
 
   // ========== BOTTLENECK STAGE ==========
-  const bottleneckBlock = createAbstractBlock(
+  const bottleneckBlock = createResidualBlockWithWeights(
     'Bottleneck',
-    'Residual Block',
-    '[16,2,2]',
-    '#aa00ff',
-    new THREE.Vector3(2.2, 2.2, 1.4)
+    model.bottleneck,
+    '#aa00ff'
   );
   bottleneckBlock.position.copy(positions.bottleneck);
   group.add(bottleneckBlock);
 
   // Upsample indicator
-  const upsampleBlock = createOperationBlock('↑ Upsample ×2', '#00ff99');
+  const upsampleBlock = createOperationBlock('↑ ×2', '#00ff99');
   upsampleBlock.position.copy(positions.upsample);
   group.add(upsampleBlock);
 
   // ========== DECODER STAGE ==========
-  const decoderBlock = createAbstractBlock(
+  const decoderBlock = createResidualBlockWithWeights(
     'Decoder',
-    'Residual Block',
-    '[8,4,4]',
-    '#00ff88',
-    new THREE.Vector3(1.8, 1.8, 1.2)
+    model.decoder.blocks[0],
+    '#00ff88'
   );
   decoderBlock.position.copy(positions.decoder);
   group.add(decoderBlock);
 
   // ========== OUTPUT CONVOLUTION ==========
-  const outputBlock = createAbstractBlock(
+  const outputBlock = createConvBlockWithWeights(
     'Output Conv',
     '8→3 ch',
-    '[3,4,4]',
-    '#44ff88',
-    new THREE.Vector3(1.2, 1.2, 0.8)
+    model.outputConv,
+    '#44ff88'
   );
   outputBlock.position.copy(positions.output);
   group.add(outputBlock);
@@ -104,9 +96,9 @@ export function createMinimalUNetVisualization(
   // ========== SKIP CONNECTION ==========
   if (config.showSkipConnections) {
     const skipCurve = new THREE.QuadraticBezierCurve3(
-      positions.encoder.clone().add(new THREE.Vector3(1.2, 0, 0)),
+      positions.encoder.clone().add(new THREE.Vector3(2, 0, 0)),
       new THREE.Vector3(0, UNIT * 1.5, 0),
-      positions.decoder.clone().add(new THREE.Vector3(-1.2, 0, 0))
+      positions.decoder.clone().add(new THREE.Vector3(-2, 0, 0))
     );
 
     const skipPoints = skipCurve.getPoints(50);
@@ -124,7 +116,7 @@ export function createMinimalUNetVisualization(
     const skipLabel = createLabel(
       'Skip Connection',
       new THREE.Vector3(0, UNIT * 1.8, 0),
-      0.4,
+      0.35,
       '#ff00ff'
     );
     group.add(skipLabel);
@@ -132,19 +124,20 @@ export function createMinimalUNetVisualization(
 
   // ========== FLOW ARROWS ==========
   const arrowColor = 0xffffff;
+  const arrowOffset = 2;
 
   // Input → Encoder
   createFlowArrow(
     group,
-    positions.input.clone().add(new THREE.Vector3(0, -0.8, 0)),
-    positions.encoder.clone().add(new THREE.Vector3(0, 1.2, 0)),
+    positions.input.clone().add(new THREE.Vector3(0, -arrowOffset, 0)),
+    positions.encoder.clone().add(new THREE.Vector3(0, arrowOffset, 0)),
     arrowColor
   );
 
   // Encoder → Downsample
   createFlowArrow(
     group,
-    positions.encoder.clone().add(new THREE.Vector3(0, -1.2, 0)),
+    positions.encoder.clone().add(new THREE.Vector3(0, -arrowOffset, 0)),
     positions.downsample.clone().add(new THREE.Vector3(0, 0.3, 0)),
     arrowColor
   );
@@ -153,14 +146,14 @@ export function createMinimalUNetVisualization(
   createFlowArrow(
     group,
     positions.downsample.clone().add(new THREE.Vector3(0.5, -0.3, 0)),
-    positions.bottleneck.clone().add(new THREE.Vector3(-1.5, 0.5, 0)),
+    positions.bottleneck.clone().add(new THREE.Vector3(-2, 0.5, 0)),
     arrowColor
   );
 
   // Bottleneck → Upsample
   createFlowArrow(
     group,
-    positions.bottleneck.clone().add(new THREE.Vector3(1.5, 0.5, 0)),
+    positions.bottleneck.clone().add(new THREE.Vector3(2, 0.5, 0)),
     positions.upsample.clone().add(new THREE.Vector3(-0.5, -0.3, 0)),
     arrowColor
   );
@@ -169,107 +162,224 @@ export function createMinimalUNetVisualization(
   createFlowArrow(
     group,
     positions.upsample.clone().add(new THREE.Vector3(0, 0.3, 0)),
-    positions.decoder.clone().add(new THREE.Vector3(0, -1.2, 0)),
+    positions.decoder.clone().add(new THREE.Vector3(0, -arrowOffset, 0)),
     arrowColor
   );
 
   // Decoder → Output
   createFlowArrow(
     group,
-    positions.decoder.clone().add(new THREE.Vector3(0, 1.2, 0)),
-    positions.output.clone().add(new THREE.Vector3(0, -0.8, 0)),
+    positions.decoder.clone().add(new THREE.Vector3(0, arrowOffset, 0)),
+    positions.output.clone().add(new THREE.Vector3(0, -arrowOffset, 0)),
     arrowColor
   );
-
-  // ========== STAGE LABELS ==========
-  const encoderStageLabel = createLabel(
-    'ENCODER PATH',
-    new THREE.Vector3(-UNIT * 3, UNIT * 4.5, 0),
-    0.5,
-    '#00aaff'
-  );
-  group.add(encoderStageLabel);
-
-  const decoderStageLabel = createLabel(
-    'DECODER PATH',
-    new THREE.Vector3(UNIT * 3, UNIT * 4.5, 0),
-    0.5,
-    '#00ff88'
-  );
-  group.add(decoderStageLabel);
 
   return group;
 }
 
 /**
- * Create an abstract block representation (clean box with labels)
+ * Create a residual block with inline weight visualization
  */
-function createAbstractBlock(
+function createResidualBlockWithWeights(
   title: string,
-  subtitle: string,
-  shape: string,
-  color: string,
-  size: THREE.Vector3
+  block: ResidualBlock,
+  color: string
 ): THREE.Group {
   const group = new THREE.Group();
 
-  // Main box with wireframe
-  const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
-
-  // Solid fill with transparency - INTERACTABLE
-  const fillMaterial = new THREE.MeshBasicMaterial({
-    color: color,
-    transparent: true,
-    opacity: 0.2,
-  });
-  const fillMesh = new THREE.Mesh(geometry, fillMaterial);
-
-  // Make this mesh interactable
-  fillMesh.userData = {
-    type: 'diamond_block', // Will match InteractableType.DIAMOND_BLOCK
-    blockName: title,
-    blockSubtitle: subtitle,
-    blockShape: shape,
-    blockColor: color,
-  };
-
-  group.add(fillMesh);
-
-  // Wireframe edges
-  const edges = new THREE.EdgesGeometry(geometry);
-  const lineMaterial = new THREE.LineBasicMaterial({
-    color: color,
-    linewidth: 2
-  });
-  const wireframe = new THREE.LineSegments(edges, lineMaterial);
-  group.add(wireframe);
-
-  // Title label (top)
-  const titleLabel = createLabel(
-    title,
-    new THREE.Vector3(0, size.y / 2 + 0.5, 0),
-    0.35,
-    color
-  );
+  // Title at top
+  const titleLabel = createLabel(title, new THREE.Vector3(0, 2.5, 0), 0.4, color);
   group.add(titleLabel);
 
-  // Subtitle label (middle)
-  const subtitleLabel = createLabel(
-    subtitle,
-    new THREE.Vector3(0, 0, size.z / 2 + 0.3),
-    0.25,
-    '#cccccc'
+  // Conv1 on left
+  const conv1Group = createCompactKernelGrid(block.conv1, 0.6);
+  conv1Group.position.set(-1.5, 0.5, 0);
+  group.add(conv1Group);
+
+  const conv1Label = createLabel('Conv1', new THREE.Vector3(-1.5, -1.2, 0), 0.25, '#cccccc');
+  group.add(conv1Label);
+
+  // Conv2 on right
+  const conv2Group = createCompactKernelGrid(block.conv2, 0.6);
+  conv2Group.position.set(1.5, 0.5, 0);
+  group.add(conv2Group);
+
+  const conv2Label = createLabel('Conv2', new THREE.Vector3(1.5, -1.2, 0), 0.25, '#cccccc');
+  group.add(conv2Label);
+
+  // Flow arrow between Conv1 and Conv2
+  createSmallFlowArrow(
+    group,
+    new THREE.Vector3(-0.6, 0.5, 0),
+    new THREE.Vector3(0.6, 0.5, 0),
+    0xcccccc
   );
+
+  // Residual connection arc
+  const residualCurve = new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(-1.5, 1.5, 0),
+    new THREE.Vector3(0, 2, 0),
+    new THREE.Vector3(1.5, 1.5, 0)
+  );
+
+  const residualPoints = residualCurve.getPoints(20);
+  const residualGeometry = new THREE.BufferGeometry().setFromPoints(residualPoints);
+  const residualMaterial = new THREE.LineDashedMaterial({
+    color: 0xffaa00,
+    linewidth: 2,
+    dashSize: 0.1,
+    gapSize: 0.1,
+  });
+  const residualLine = new THREE.Line(residualGeometry, residualMaterial);
+  residualLine.computeLineDistances();
+  group.add(residualLine);
+
+  const residualLabel = createLabel('Residual', new THREE.Vector3(0, 2.2, 0), 0.2, '#ffaa00');
+  group.add(residualLabel);
+
+  // Bounding box for the whole block
+  const boxGeometry = new THREE.BoxGeometry(4, 3.5, 1);
+  const boxEdges = new THREE.EdgesGeometry(boxGeometry);
+  const boxMaterial = new THREE.LineBasicMaterial({
+    color: color,
+    linewidth: 2,
+    transparent: true,
+    opacity: 0.5,
+  });
+  const boxWireframe = new THREE.LineSegments(boxEdges, boxMaterial);
+  boxWireframe.position.y = 0.2;
+  group.add(boxWireframe);
+
+  return group;
+}
+
+/**
+ * Create a simple conv block with inline weights
+ */
+function createConvBlockWithWeights(
+  title: string,
+  subtitle: string,
+  convLayer: ConvLayer,
+  color: string
+): THREE.Group {
+  const group = new THREE.Group();
+
+  // Title at top
+  const titleLabel = createLabel(title, new THREE.Vector3(0, 1.5, 0), 0.35, color);
+  group.add(titleLabel);
+
+  const subtitleLabel = createLabel(subtitle, new THREE.Vector3(0, 1.1, 0), 0.25, '#888888');
   group.add(subtitleLabel);
 
-  // Shape label (bottom)
+  // Compact kernel grid in center
+  const kernelGrid = createCompactKernelGrid(convLayer, 0.5);
+  kernelGrid.position.set(0, 0, 0);
+  group.add(kernelGrid);
+
+  // Shape info at bottom
   const shapeLabel = createLabel(
-    shape,
-    new THREE.Vector3(0, -size.y / 2 - 0.5, 0),
-    0.3,
+    `[${convLayer.outChannels},${convLayer.kernelSize}×${convLayer.kernelSize}]`,
+    new THREE.Vector3(0, -0.9, 0),
+    0.25,
     '#888888'
   );
   group.add(shapeLabel);
+
+  // Bounding box
+  const boxGeometry = new THREE.BoxGeometry(2.5, 2.5, 0.8);
+  const boxEdges = new THREE.EdgesGeometry(boxGeometry);
+  const boxMaterial = new THREE.LineBasicMaterial({
+    color: color,
+    linewidth: 2,
+    transparent: true,
+    opacity: 0.5,
+  });
+  const boxWireframe = new THREE.LineSegments(boxEdges, boxMaterial);
+  boxWireframe.position.y = 0.2;
+  group.add(boxWireframe);
+
+  return group;
+}
+
+/**
+ * Create a compact kernel grid showing actual weights
+ * Shows a subset of kernels (max 3x3 grid of kernels)
+ */
+function createCompactKernelGrid(
+  convLayer: ConvLayer,
+  scale: number = 0.5
+): THREE.Group {
+  const group = new THREE.Group();
+
+  // Display up to 3x3 kernels
+  const maxDisplay = 3;
+  const displayOut = Math.min(convLayer.outChannels, maxDisplay);
+  const displayIn = Math.min(convLayer.inChannels, maxDisplay);
+
+  const kernelSize = convLayer.kernelSize;
+  const cellSize = scale * 0.15;
+  const kernelSpacing = cellSize * (kernelSize + 1);
+
+  for (let oc = 0; oc < displayOut; oc++) {
+    for (let ic = 0; ic < displayIn; ic++) {
+      const kernel = convLayer.weights[oc][ic];
+
+      // Draw the individual kernel weights
+      for (let kh = 0; kh < kernelSize; kh++) {
+        for (let kw = 0; kw < kernelSize; kw++) {
+          const weight = kernel[kh][kw];
+
+          // Color based on weight value
+          const absWeight = Math.abs(weight);
+          const normalizedWeight = Math.tanh(absWeight * 2);
+
+          let color: THREE.Color;
+          if (weight > 0.01) {
+            color = new THREE.Color(0x00ff00).multiplyScalar(0.3 + 0.7 * normalizedWeight);
+          } else if (weight < -0.01) {
+            color = new THREE.Color(0xff0000).multiplyScalar(0.3 + 0.7 * normalizedWeight);
+          } else {
+            color = new THREE.Color(0x444444);
+          }
+
+          const geometry = new THREE.BoxGeometry(cellSize, cellSize, cellSize * 0.3);
+          const material = new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.85,
+          });
+          const cube = new THREE.Mesh(geometry, material);
+
+          // Position within the kernel
+          const localX = kw * cellSize * 1.1 - (kernelSize * cellSize * 1.1) / 2;
+          const localY = -kh * cellSize * 1.1 + (kernelSize * cellSize * 1.1) / 2;
+
+          // Position within the grid of kernels
+          const gridX = ic * kernelSpacing - (displayIn * kernelSpacing) / 2;
+          const gridY = -oc * kernelSpacing + (displayOut * kernelSpacing) / 2;
+
+          cube.position.set(
+            gridX + localX + kernelSpacing / 2,
+            gridY + localY - kernelSpacing / 2,
+            0
+          );
+
+          group.add(cube);
+        }
+      }
+    }
+  }
+
+  // Add ellipsis if there are more kernels than displayed
+  if (convLayer.outChannels > maxDisplay || convLayer.inChannels > maxDisplay) {
+    const ellipsisLabel = createLabel(
+      '...',
+      new THREE.Vector3(0, -(displayOut * kernelSpacing) / 2 - 0.3, 0),
+      0.2,
+      '#666666'
+    );
+    group.add(ellipsisLabel);
+  }
 
   return group;
 }
@@ -352,7 +462,7 @@ function createLabel(
   const material = new THREE.SpriteMaterial({
     map: texture,
     transparent: true,
-    depthTest: false // Always render on top
+    depthTest: false
   });
   const sprite = new THREE.Sprite(material);
 
@@ -390,6 +500,41 @@ function createFlowArrow(
     color: color,
     transparent: true,
     opacity: 0.8
+  });
+  const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
+  arrow.position.copy(toPos);
+  arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  parent.add(arrow);
+}
+
+/**
+ * Create a small flow arrow (for within blocks)
+ */
+function createSmallFlowArrow(
+  parent: THREE.Group,
+  fromPos: THREE.Vector3,
+  toPos: THREE.Vector3,
+  color: number
+): void {
+  const direction = new THREE.Vector3().subVectors(toPos, fromPos).normalize();
+
+  // Line
+  const lineGeometry = new THREE.BufferGeometry().setFromPoints([fromPos, toPos]);
+  const lineMaterial = new THREE.LineBasicMaterial({
+    color: color,
+    linewidth: 1,
+    transparent: true,
+    opacity: 0.5
+  });
+  const line = new THREE.Line(lineGeometry, lineMaterial);
+  parent.add(line);
+
+  // Small arrowhead
+  const arrowGeometry = new THREE.ConeGeometry(0.08, 0.2, 6);
+  const arrowMaterial = new THREE.MeshBasicMaterial({
+    color: color,
+    transparent: true,
+    opacity: 0.7
   });
   const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
   arrow.position.copy(toPos);
