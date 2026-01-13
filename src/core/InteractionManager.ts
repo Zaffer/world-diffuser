@@ -6,7 +6,9 @@ import { Observable, Subject } from "rxjs";
  */
 export enum InteractableType {
   NETWORK_NODE = "network_neuron",  // Neural network neurons
-  NETWORK_EDGE = "network_synapse"  // Neural network synapses (connections)
+  NETWORK_EDGE = "network_synapse", // Neural network synapses (connections)
+  DIAMOND_BLOCK = "diamond_block",   // DIAMOND architecture blocks (clickable)
+  DIAMOND_OPERATION = "diamond_operation" // Operations like upsample/downsample
 }
 
 /**
@@ -258,14 +260,16 @@ export class InteractionManager {
    */
   public findInteractableObjects(): THREE.Object3D[] {
     const interactables: THREE.Object3D[] = [];
-    
+
     this.scene.traverse((child) => {
-      if (child.userData.type === InteractableType.NETWORK_NODE || 
-          child.userData.type === InteractableType.NETWORK_EDGE) {
+      if (child.userData.type === InteractableType.NETWORK_NODE ||
+          child.userData.type === InteractableType.NETWORK_EDGE ||
+          child.userData.type === InteractableType.DIAMOND_BLOCK ||
+          child.userData.type === InteractableType.DIAMOND_OPERATION) {
         interactables.push(child);
       }
     });
-    
+
     return interactables;
   }
 

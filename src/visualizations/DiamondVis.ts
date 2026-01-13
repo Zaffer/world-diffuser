@@ -30,10 +30,10 @@ export function createConvKernelVisualization(
   const height = kernel.length;
   const width = kernel[0].length;
 
-  // Color scheme for weights
-  const negativeColor = new THREE.Color(0xff0000); // Red for negative
-  const positiveColor = new THREE.Color(0x00ff00); // Green for positive
-  const zeroColor = new THREE.Color(0x888888); // Gray for near-zero
+  // Color scheme for weights - brighter and more saturated
+  const negativeColor = new THREE.Color(0xff3333); // Bright red for negative
+  const positiveColor = new THREE.Color(0x33ff33); // Bright green for positive
+  const zeroColor = new THREE.Color(0xaaaaaa); // Lighter gray for near-zero
 
   for (let h = 0; h < height; h++) {
     for (let w = 0; w < width; w++) {
@@ -45,21 +45,23 @@ export function createConvKernelVisualization(
         color = zeroColor.clone();
       } else if (weight > 0) {
         const intensity = Math.min(Math.abs(weight), 1.0);
-        color = positiveColor.clone().multiplyScalar(intensity);
+        // Brighter: mix with full brightness
+        color = positiveColor.clone().multiplyScalar(0.5 + 0.5 * intensity);
       } else {
         const intensity = Math.min(Math.abs(weight), 1.0);
-        color = negativeColor.clone().multiplyScalar(intensity);
+        // Brighter: mix with full brightness
+        color = negativeColor.clone().multiplyScalar(0.5 + 0.5 * intensity);
       }
 
-      // Size based on magnitude
+      // Size based on magnitude - make cubes larger
       const magnitude = Math.min(Math.abs(weight), 1.0);
-      const size = cubeSize * (0.3 + 0.7 * magnitude);
+      const size = cubeSize * (0.5 + 0.5 * magnitude); // Larger base size
 
       const geometry = new THREE.BoxGeometry(size, size, size);
       const material = new THREE.MeshBasicMaterial({
         color: color,
-        transparent: true,
-        opacity: 0.8,
+        transparent: false, // Remove transparency
+        opacity: 1.0, // Full opacity
       });
       const cube = new THREE.Mesh(geometry, material);
 
@@ -118,7 +120,8 @@ export function createConvLayerVisualization(
       if (config.showWeights) {
         const label = createTextLabel(
           `K[${oc},${ic}]`,
-          new THREE.Vector3(position.x, position.y - 0.5, position.z)
+          new THREE.Vector3(position.x, position.y - 0.5, position.z),
+          0.2 // Doubled from 0.1 default
         );
         group.add(label);
       }
@@ -127,7 +130,7 @@ export function createConvLayerVisualization(
 
   // Add layer info label
   const layerInfo = `Conv2D: ${convLayer.inChannels}→${convLayer.outChannels}, ${convLayer.kernelSize}x${convLayer.kernelSize}`;
-  const infoLabel = createTextLabel(layerInfo, new THREE.Vector3(0, 1.5, 0), 0.15);
+  const infoLabel = createTextLabel(layerInfo, new THREE.Vector3(0, 1.5, 0), 0.3); // Doubled from 0.15
   group.add(infoLabel);
 
   return group;
@@ -148,7 +151,7 @@ function createTextLabel(text: string, position: THREE.Vector3, size: number = 0
   context.fillStyle = '#222222';
   context.fillRect(0, 0, canvas.width, canvas.height);
 
-  context.font = '20px monospace';
+  context.font = '40px monospace'; // Doubled from 20px
   context.fillStyle = '#ffffff';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
@@ -194,15 +197,15 @@ export function createBlockContainer(
 ): THREE.Group {
   const group = new THREE.Group();
 
-  // Wireframe box
+  // Wireframe box - neutral gray color, no fill
   const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
   const edges = new THREE.EdgesGeometry(geometry);
-  const lineMaterial = new THREE.LineBasicMaterial({ color: 0x666666, linewidth: 1 });
+  const lineMaterial = new THREE.LineBasicMaterial({ color: 0x888888, linewidth: 2 });
   const wireframe = new THREE.LineSegments(edges, lineMaterial);
   group.add(wireframe);
 
   // Label
-  const label = createTextLabel(blockName, new THREE.Vector3(0, size.y / 2 + 0.3, 0), 0.12);
+  const label = createTextLabel(blockName, new THREE.Vector3(0, size.y / 2 + 0.3, 0), 0.24);
   group.add(label);
 
   group.position.copy(position);
@@ -220,27 +223,45 @@ export function createResidualBlockVis(
 ): THREE.Group {
   const group = new THREE.Group();
 
-  // Stack layers vertically within the block
-  const layerSpacing = 0.8;
-  let currentZ = 0;
+  // Position layers side-by-side instead of stacked for better visibility
+  const layerSpacing = 1.2;
 
-  // Conv1
+  // Conv1 on the left
   const conv1Vis = createConvLayerVisualization(residualBlock.conv1, config);
-  conv1Vis.position.z = currentZ;
-  conv1Vis.scale.setScalar(0.3); // Scale down to fit in block
+  conv1Vis.position.set(-layerSpacing / 2, 0, 0);
+  conv1Vis.scale.setScalar(0.35); // Slightly larger than before
   group.add(conv1Vis);
-  currentZ -= layerSpacing;
 
-  // Conv2
+  // Add Conv1 label
+  const conv1Label = createTextLabel('Conv1', new THREE.Vector3(-layerSpacing / 2, -0.8, 0), 0.16);
+  group.add(conv1Label);
+
+  // Conv2 on the right
   const conv2Vis = createConvLayerVisualization(residualBlock.conv2, config);
-  conv2Vis.position.z = currentZ;
-  conv2Vis.scale.setScalar(0.3);
+  conv2Vis.position.set(layerSpacing / 2, 0, 0);
+  conv2Vis.scale.setScalar(0.35);
   group.add(conv2Vis);
 
+  // Add Conv2 label
+  const conv2Label = createTextLabel('Conv2', new THREE.Vector3(layerSpacing / 2, -0.8, 0), 0.16);
+  group.add(conv2Label);
+
   // Add block container
-  const containerSize = new THREE.Vector3(2, 1.5, 2);
-  const container = createBlockContainer(blockName, new THREE.Vector3(0, 0, -layerSpacing / 2), containerSize);
+  const containerSize = new THREE.Vector3(3.5, 2.5, 1.5);
+  const container = createBlockContainer(blockName, new THREE.Vector3(0, 0, 0), containerSize);
   group.add(container);
+
+  // Add residual connection indicator (curved line from input to output)
+  const residualCurve = new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(-containerSize.x / 2, 0, 0.5),
+    new THREE.Vector3(0, -containerSize.y / 2 - 0.5, 0.5),
+    new THREE.Vector3(containerSize.x / 2, 0, 0.5)
+  );
+  const curvePoints = residualCurve.getPoints(30);
+  const curveGeometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
+  const curveMaterial = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2, opacity: 0.6, transparent: true });
+  const residualLine = new THREE.Line(curveGeometry, curveMaterial);
+  group.add(residualLine);
 
   group.position.copy(position);
   return group;
@@ -263,7 +284,7 @@ export function createDownsampleVis(
   group.add(arrow);
 
   // Label showing spatial reduction
-  const label = createTextLabel(`↓ ×${downsample.factor}`, new THREE.Vector3(0.5, 0, 0), 0.1);
+  const label = createTextLabel(`↓ ×${downsample.factor}`, new THREE.Vector3(0.5, 0, 0), 0.2);
   group.add(label);
 
   group.position.copy(position);
@@ -286,7 +307,7 @@ export function createUpsampleVis(
   group.add(arrow);
 
   // Label showing spatial expansion
-  const label = createTextLabel(`↑ ×${upsample.factor}`, new THREE.Vector3(0.5, 0, 0), 0.1);
+  const label = createTextLabel(`↑ ×${upsample.factor}`, new THREE.Vector3(0.5, 0, 0), 0.2);
   group.add(label);
 
   group.position.copy(position);
@@ -320,7 +341,7 @@ export function createSkipConnectionVis(
   // Label at midpoint
   const midpoint = curve.getPoint(0.5);
   const shapeLabel = `[${skipConnection.fromShape.join(',')}]`;
-  const label = createTextLabel(shapeLabel, midpoint, 0.08);
+  const label = createTextLabel(shapeLabel, midpoint, 0.16);
   group.add(label);
 
   return group;
