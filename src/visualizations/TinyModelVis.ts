@@ -69,8 +69,8 @@ function createTextSprite(
  */
 function weightToColor(value: number, config: TinyVisConfig): THREE.Color {
   const absVal = Math.min(Math.abs(value), 1);
-  // Use a minimum brightness so small weights are still visible
-  const intensity = 0.4 + 0.6 * absVal;
+  // Keep minimum brightness but allow stronger highlights for large magnitudes
+  const intensity = Math.min(1.2, 0.55 + 0.8 * absVal);
   
   if (value >= 0) {
     // Positive: bright cyan-blue

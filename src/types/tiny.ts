@@ -120,8 +120,8 @@ export const DEFAULT_TINY_VIS_CONFIG: TinyVisConfig = {
   kernelScale: 0.35,
   activationScale: 1.0,
   
-  positiveColor: 0x44ddff,  // Bright cyan for positive
-  negativeColor: 0xff6644,  // Bright orange-red for negative
+  positiveColor: 0x22ccff,  // More saturated cyan for positive
+  negativeColor: 0xff5500,  // Deeper orange for negative
   activationColormap: 'viridis',
   
   showWeightValues: true,
