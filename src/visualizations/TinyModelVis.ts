@@ -265,19 +265,44 @@ function createActivationVis(
   const pixelSpacing = pixelSize * 1.1;
   const channelSpacing = config.channelSpacing * 0.5;
   
+  // First pass: find min and max values across all channels
+  let minVal = Infinity;
+  let maxVal = -Infinity;
+  for (let c = 0; c < activation.channels; c++) {
+    for (let h = 0; h < activation.height; h++) {
+      for (let w = 0; w < activation.width; w++) {
+        const value = activation.data[c][h][w];
+        if (isFinite(value)) {
+          minVal = Math.min(minVal, value);
+          maxVal = Math.max(maxVal, value);
+        }
+      }
+    }
+  }
+  
+  // Ensure we have a valid range
+  if (!isFinite(minVal) || !isFinite(maxVal) || minVal === maxVal) {
+    minVal = 0;
+    maxVal = 1;
+  }
+  const range = maxVal - minVal;
+  
   for (let c = 0; c < activation.channels; c++) {
     const channelGroup = new THREE.Group();
     
     for (let h = 0; h < activation.height; h++) {
       for (let w = 0; w < activation.width; w++) {
         const value = activation.data[c][h][w];
-        const color = activationToColor(value);
+        // Normalize to [0, 1] based on actual data range
+        const normalized = (value - minVal) / range;
+        // Full grayscale: 0 = black, 1 = white
+        const color = new THREE.Color(normalized, normalized, normalized);
         
         const geo = new THREE.BoxGeometry(pixelSize, pixelSize, pixelSize * 0.3);
         const mat = new THREE.MeshStandardMaterial({
           color,
           emissive: color,
-          emissiveIntensity: 0.4,
+          emissiveIntensity: 0.7,
         });
         
         const pixel = new THREE.Mesh(geo, mat);

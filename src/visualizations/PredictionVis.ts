@@ -43,15 +43,18 @@ export function createPredictionVisualization(predictions: number[][]): THREE.Gr
       
       // Force a minimum brightness difference between colors
       const range = Math.max(1, maxValue - minValue);
-      const normalizedValue = Math.max(0.1, Math.min(1, (safeValue - minValue) / range));
+      const normalizedValue = Math.max(0, Math.min(1, (safeValue - minValue) / range));
       
-      // Use black to white gradient (grayscale)
-      const grayValue = normalizedValue; // 0 = black, 1 = white
+      // Full contrast grayscale: 0 = total black, 1 = total white
+      const grayValue = normalizedValue;
       
-      const material = new THREE.MeshBasicMaterial({ 
+      const material = new THREE.MeshStandardMaterial({ 
         color: new THREE.Color(grayValue, grayValue, grayValue), 
         side: THREE.DoubleSide, 
-        transparent: false
+        emissive: new THREE.Color(grayValue, grayValue, grayValue),
+        emissiveIntensity: 0.8,
+        metalness: 0.0,
+        roughness: 0.8,
       });
       
       const cell = new THREE.Mesh(geometry, material);
