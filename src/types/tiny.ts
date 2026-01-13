@@ -117,11 +117,11 @@ export interface TinyVisConfig {
 export const DEFAULT_TINY_VIS_CONFIG: TinyVisConfig = {
   layerSpacing: 6,
   channelSpacing: 1.5,
-  kernelScale: 0.3,
+  kernelScale: 0.35,
   activationScale: 1.0,
   
-  positiveColor: 0x4488ff,  // Blue for positive
-  negativeColor: 0xff4444,  // Red for negative
+  positiveColor: 0x44ddff,  // Bright cyan for positive
+  negativeColor: 0xff6644,  // Bright orange-red for negative
   activationColormap: 'viridis',
   
   showWeightValues: true,

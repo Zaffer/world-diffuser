@@ -65,22 +65,19 @@ function createTextSprite(
 
 /**
  * Map a value to a color (blue for positive, red for negative)
+ * Brighter, more saturated colors for better visibility
  */
 function weightToColor(value: number, config: TinyVisConfig): THREE.Color {
   const absVal = Math.min(Math.abs(value), 1);
+  // Use a minimum brightness so small weights are still visible
+  const intensity = 0.4 + 0.6 * absVal;
   
   if (value >= 0) {
-    // Positive: interpolate from gray to blue
-    return new THREE.Color(config.positiveColor).lerp(
-      new THREE.Color(0x222222),
-      1 - absVal
-    );
+    // Positive: bright cyan-blue
+    return new THREE.Color(config.positiveColor).multiplyScalar(intensity);
   } else {
-    // Negative: interpolate from gray to red
-    return new THREE.Color(config.negativeColor).lerp(
-      new THREE.Color(0x222222),
-      1 - absVal
-    );
+    // Negative: bright red-orange
+    return new THREE.Color(config.negativeColor).multiplyScalar(intensity);
   }
 }
 
@@ -108,16 +105,17 @@ function createWeightCube(
   value: number,
   config: TinyVisConfig
 ): THREE.Mesh {
-  const size = config.kernelScale * (0.5 + 0.5 * Math.min(Math.abs(value), 1));
+  // Minimum size so all weights are visible
+  const size = config.kernelScale * (0.6 + 0.4 * Math.min(Math.abs(value), 1));
   const geometry = new THREE.BoxGeometry(size, size, size);
   const color = weightToColor(value, config);
   
   const material = new THREE.MeshStandardMaterial({
     color,
-    metalness: 0.3,
-    roughness: 0.7,
+    metalness: 0.1,
+    roughness: 0.4,
     emissive: color,
-    emissiveIntensity: 0.2,
+    emissiveIntensity: 0.6,
   });
   
   return new THREE.Mesh(geometry, material);
@@ -178,11 +176,14 @@ function createConvLayerVis(
   
   // Bias visualization (small spheres below kernels)
   for (let oc = 0; oc < layer.outChannels; oc++) {
-    const biasGeo = new THREE.SphereGeometry(config.kernelScale * 0.3, 8, 8);
+    const biasColor = weightToColor(layer.bias[oc], config);
+    const biasGeo = new THREE.SphereGeometry(config.kernelScale * 0.4, 12, 12);
     const biasMat = new THREE.MeshStandardMaterial({
-      color: weightToColor(layer.bias[oc], config),
-      emissive: weightToColor(layer.bias[oc], config),
-      emissiveIntensity: 0.3,
+      color: biasColor,
+      metalness: 0.1,
+      roughness: 0.4,
+      emissive: biasColor,
+      emissiveIntensity: 0.6,
     });
     const biasMesh = new THREE.Mesh(biasGeo, biasMat);
     biasMesh.position.set(
@@ -229,12 +230,15 @@ function createTimeEmbedVis(
   const barSpacing = 0.5;
   
   for (let i = 0; i < timeEmbed.outputDim; i++) {
-    const height = Math.abs(timeEmbed.weights[i]) * 1.5 + 0.1;
+    const barColor = weightToColor(timeEmbed.weights[i], config);
+    const height = Math.abs(timeEmbed.weights[i]) * 1.5 + 0.2;
     const geo = new THREE.BoxGeometry(barWidth, height, barWidth);
     const mat = new THREE.MeshStandardMaterial({
-      color: weightToColor(timeEmbed.weights[i], config),
-      emissive: weightToColor(timeEmbed.weights[i], config),
-      emissiveIntensity: 0.3,
+      color: barColor,
+      metalness: 0.1,
+      roughness: 0.4,
+      emissive: barColor,
+      emissiveIntensity: 0.6,
     });
     const bar = new THREE.Mesh(geo, mat);
     bar.position.set((i - (timeEmbed.outputDim - 1) / 2) * barSpacing, 0, 0);
