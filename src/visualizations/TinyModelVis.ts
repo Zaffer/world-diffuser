@@ -216,87 +216,127 @@ function createConvLayerVis(
 
 /**
  * Create visualization for a linear layer (matrix of weights)
+ * Laid out horizontally: rows go left-right (input), columns go up-down (output)
  */
 function createLinearLayerVis(
   layer: LinearLayer,
   config: TinyVisConfig,
-  label: string
+  label: string,
+  horizontal: boolean = false
 ): THREE.Group {
   const group = new THREE.Group();
 
   // Title
   const title = createTextSprite(label, 0.25, '#ffaa00');
-  title.position.set(0, 1.5, 0);
+  title.position.set(0, horizontal ? 0.8 : 1.5, 0);
   group.add(title);
 
   // Visualize weights as small cubes in a grid
   const cubeSize = 0.15;
   const spacing = 0.25;
 
-  for (let o = 0; o < layer.outputDim; o++) {
-    for (let i = 0; i < layer.inputDim; i++) {
-      const weight = layer.weights[o][i];
-      const color = weightToColor(weight, config);
-      const size = cubeSize * (0.2 + 0.8 * Math.min(Math.abs(weight), 1));
+  if (horizontal) {
+    // Horizontal layout: x = output dim, y = input dim (swapped for wider layout)
+    for (let o = 0; o < layer.outputDim; o++) {
+      for (let i = 0; i < layer.inputDim; i++) {
+        const weight = layer.weights[o][i];
+        const color = weightToColor(weight, config);
+        const size = cubeSize * (0.2 + 0.8 * Math.min(Math.abs(weight), 1));
 
-      const geo = new THREE.BoxGeometry(size, size, size);
-      const mat = new THREE.MeshStandardMaterial({
-        color,
-        metalness: 0.1,
-        roughness: 0.4,
-        emissive: color,
-        emissiveIntensity: 0.6,
-      });
-      const cube = new THREE.Mesh(geo, mat);
+        const geo = new THREE.BoxGeometry(size, size, size);
+        const mat = new THREE.MeshStandardMaterial({
+          color,
+          metalness: 0.1,
+          roughness: 0.4,
+          emissive: color,
+          emissiveIntensity: 0.6,
+        });
+        const cube = new THREE.Mesh(geo, mat);
 
-      // Position in grid: x = input dim, y = output dim
-      cube.position.set(
-        (i - (layer.inputDim - 1) / 2) * spacing,
-        -(o - (layer.outputDim - 1) / 2) * spacing,
-        0
-      );
-      group.add(cube);
+        // Horizontal layout: spread output dims along x-axis
+        cube.position.set(
+          (o - (layer.outputDim - 1) / 2) * spacing,
+          -(i - (layer.inputDim - 1) / 2) * spacing * 0.8,
+          0
+        );
+        group.add(cube);
+      }
     }
-  }
 
-  // Dimension label
-  const dimLabel = createTextSprite(
-    `${layer.inputDim}→${layer.outputDim}`,
-    0.2,
-    '#888888'
-  );
-  dimLabel.position.set(0, -layer.outputDim * spacing * 0.6 - 0.5, 0);
-  group.add(dimLabel);
+    // Dimension label below
+    const dimLabel = createTextSprite(
+      `${layer.inputDim}→${layer.outputDim}`,
+      0.18,
+      '#888888'
+    );
+    dimLabel.position.set(0, -0.6, 0);
+    group.add(dimLabel);
+  } else {
+    // Original vertical layout
+    for (let o = 0; o < layer.outputDim; o++) {
+      for (let i = 0; i < layer.inputDim; i++) {
+        const weight = layer.weights[o][i];
+        const color = weightToColor(weight, config);
+        const size = cubeSize * (0.2 + 0.8 * Math.min(Math.abs(weight), 1));
+
+        const geo = new THREE.BoxGeometry(size, size, size);
+        const mat = new THREE.MeshStandardMaterial({
+          color,
+          metalness: 0.1,
+          roughness: 0.4,
+          emissive: color,
+          emissiveIntensity: 0.6,
+        });
+        const cube = new THREE.Mesh(geo, mat);
+
+        cube.position.set(
+          (i - (layer.inputDim - 1) / 2) * spacing,
+          -(o - (layer.outputDim - 1) / 2) * spacing,
+          0
+        );
+        group.add(cube);
+      }
+    }
+
+    const dimLabel = createTextSprite(
+      `${layer.inputDim}→${layer.outputDim}`,
+      0.2,
+      '#888888'
+    );
+    dimLabel.position.set(0, -layer.outputDim * spacing * 0.6 - 0.5, 0);
+    group.add(dimLabel);
+  }
 
   return group;
 }
 
 /**
- * Create time embedding MLP visualization with cnoise value
+ * Create time embedding MLP visualization with horizontal flow
+ * Layout: cnoise → hidden → output (left to right)
  */
-function createTimeEmbedMLPVis(
+function createTimeEmbedMLPHorizontalVis(
   mlp: TimeEmbeddingMLP,
   cnoise: number,
   config: TinyVisConfig
 ): THREE.Group {
   const group = new THREE.Group();
 
-  const layerSpacing = 2;
-  let yPos = 0;
+  const layerSpacing = 2.5;
+  let xPos = 0;
 
   // ===== CNOISE VALUE =====
   const cnoiseLabel = createTextSprite(
     `cnoise = ${cnoise.toFixed(3)}`,
-    0.3,
+    0.25,
     '#ffaa00'
   );
-  cnoiseLabel.position.set(0, yPos, 0);
+  cnoiseLabel.position.set(xPos, 0.8, 0);
   group.add(cnoiseLabel);
 
   // Visualize cnoise as a colored bar
   const cnoiseColor = weightToColor(cnoise, config);
-  const cnoiseHeight = Math.abs(cnoise) * 1.5 + 0.3;
-  const cnoiseGeo = new THREE.BoxGeometry(0.3, cnoiseHeight, 0.3);
+  const cnoiseHeight = Math.abs(cnoise) * 1.2 + 0.3;
+  const cnoiseGeo = new THREE.BoxGeometry(0.25, cnoiseHeight, 0.25);
   const cnoiseMat = new THREE.MeshStandardMaterial({
     color: cnoiseColor,
     metalness: 0.1,
@@ -305,34 +345,35 @@ function createTimeEmbedMLPVis(
     emissiveIntensity: 0.6,
   });
   const cnoiseBar = new THREE.Mesh(cnoiseGeo, cnoiseMat);
-  cnoiseBar.position.set(0, yPos - 0.8, 0);
+  cnoiseBar.position.set(xPos, 0, 0);
   group.add(cnoiseBar);
 
-  yPos -= layerSpacing;
+  xPos += layerSpacing;
 
-  // ===== HIDDEN LAYER =====
-  const hiddenVis = createLinearLayerVis(mlp.hiddenLayer, config, 'Hidden');
-  hiddenVis.position.set(0, yPos, 0);
+  // ===== HIDDEN LAYER (horizontal layout) =====
+  const hiddenVis = createLinearLayerVis(mlp.hiddenLayer, config, 'Hidden', true);
+  hiddenVis.position.set(xPos, 0, 0);
   group.add(hiddenVis);
 
-  yPos -= layerSpacing;
-
-  // ===== OUTPUT LAYER =====
-  const outputVis = createLinearLayerVis(mlp.outputLayer, config, 'Shared Emb');
-  outputVis.position.set(0, yPos, 0);
-  group.add(outputVis);
-
-  // Add arrows showing flow
+  // Arrow from cnoise to hidden
   const arrow1 = createArrow(
-    new THREE.Vector3(0, -0.8, 0),
-    new THREE.Vector3(0, -layerSpacing + 0.8, 0),
+    new THREE.Vector3(xPos - layerSpacing + 0.3, 0, 0),
+    new THREE.Vector3(xPos - 0.8, 0, 0),
     0x666666
   );
   group.add(arrow1);
 
+  xPos += layerSpacing;
+
+  // ===== OUTPUT LAYER (horizontal layout) =====
+  const outputVis = createLinearLayerVis(mlp.outputLayer, config, 'Emb', true);
+  outputVis.position.set(xPos, 0, 0);
+  group.add(outputVis);
+
+  // Arrow from hidden to output
   const arrow2 = createArrow(
-    new THREE.Vector3(0, -layerSpacing - 0.8, 0),
-    new THREE.Vector3(0, -layerSpacing * 2 + 0.8, 0),
+    new THREE.Vector3(xPos - layerSpacing + 0.8, 0, 0),
+    new THREE.Vector3(xPos - 1.2, 0, 0),
     0x666666
   );
   group.add(arrow2);
@@ -516,15 +557,17 @@ export function createTinyUNetVisualization(
     output: spacing * 2.8,
   };
   
-  // ===== TIME EMBEDDING MLP (far left, vertical) =====
+  // ===== TIME EMBEDDING MLP (horizontal, above U-Net) =====
   if (config.showTimeEmbedding) {
     // Note: This static visualization shows structure only, not actual forward pass values
     // The cnoise value shown is just for reference (computed from timestep = 0.5)
     const referenceTimestep = 0.5;
     const referenceCnoise = 0.25 * Math.log(Math.max(referenceTimestep, 1e-6));
 
-    const timeVis = createTimeEmbedMLPVis(model.timeEmbedMLP, referenceCnoise, config);
-    timeVis.position.set(-spacing * 3.5, 2, 0); // Far left, vertical column
+    const timeVis = createTimeEmbedMLPHorizontalVis(model.timeEmbedMLP, referenceCnoise, config);
+    // Position above and centered relative to the conv blocks
+    const mlpCenterX = (positions.inputConv + positions.decoder) / 2 - 2.5;
+    timeVis.position.set(mlpCenterX, 5, 0);
     group.add(timeVis);
   }
   
@@ -643,42 +686,69 @@ export function createTinyUNetWithActivations(
     output: spacing * 2.8,
   };
 
-  // ===== TIME CONDITIONING (replace static MLP with actual forward pass values) =====
+  // ===== TIME CONDITIONING (horizontal MLP with embedding bars aligned to blocks) =====
   if (config.showTimeEmbedding) {
-    // Remove the static time visualization and add the actual forward pass version
-    const actualTimeVis = createTimeEmbedMLPVis(model.timeEmbedMLP, state.cnoise, config);
-    actualTimeVis.position.set(-spacing * 3.5, 2, 0);
+    // Horizontal MLP visualization above the U-Net
+    const actualTimeVis = createTimeEmbedMLPHorizontalVis(model.timeEmbedMLP, state.cnoise, config);
+    const mlpCenterX = (positions.afterInputConv + positions.afterDecoder) / 2 - 2.5;
+    actualTimeVis.position.set(mlpCenterX, 5, 0);
     group.add(actualTimeVis);
 
-    // Add visualization for shared embedding output (as bars below MLP)
-    const embeddingLabel = createTextSprite('Shared Embedding', 0.2, '#00ff99');
-    embeddingLabel.position.set(-spacing * 3.5, -3, 0);
-    group.add(embeddingLabel);
+    // Visualize the 8 embedding values as bars aligned with the 4 conv blocks
+    // Each pair of embedding dimensions goes to one block (via the projection layer)
+    const blockPositions = [
+      positions.afterInputConv,
+      positions.afterEncoder,
+      spacing * 0.5, // bottleneck
+      positions.afterDecoder,
+    ];
 
-    // Visualize shared embedding values as small bars
-    const barSpacing = 0.2;
+    const embeddingY = 3; // Below MLP, above conv blocks
     const barWidth = 0.15;
-    for (let i = 0; i < state.sharedEmbedding.length; i++) {
-      const val = state.sharedEmbedding[i];
-      const color = weightToColor(val, config);
-      const height = Math.abs(val) * 0.8 + 0.1;
+    const barSpacing = 0.3;
 
-      const geo = new THREE.BoxGeometry(barWidth, height, barWidth);
-      const mat = new THREE.MeshStandardMaterial({
-        color,
-        metalness: 0.1,
-        roughness: 0.4,
-        emissive: color,
-        emissiveIntensity: 0.6,
-      });
-      const bar = new THREE.Mesh(geo, mat);
-      bar.position.set(
-        -spacing * 3.5 + (i - (state.sharedEmbedding.length - 1) / 2) * barSpacing,
-        -3.5,
-        0
-      );
-      group.add(bar);
+    // Draw 8 embedding bars grouped in pairs above their target blocks
+    for (let blockIdx = 0; blockIdx < 4; blockIdx++) {
+      const blockX = blockPositions[blockIdx];
+
+      // Each block gets 2 embedding values (indices blockIdx*2 and blockIdx*2+1)
+      for (let localIdx = 0; localIdx < 2; localIdx++) {
+        const embIdx = blockIdx * 2 + localIdx;
+        if (embIdx >= state.sharedEmbedding.length) continue;
+
+        const val = state.sharedEmbedding[embIdx];
+        const color = weightToColor(val, config);
+        const height = Math.abs(val) * 0.6 + 0.1;
+
+        const geo = new THREE.BoxGeometry(barWidth, height, barWidth);
+        const mat = new THREE.MeshStandardMaterial({
+          color,
+          metalness: 0.1,
+          roughness: 0.4,
+          emissive: color,
+          emissiveIntensity: 0.6,
+        });
+        const bar = new THREE.Mesh(geo, mat);
+
+        // Position bars in pairs above each block
+        const xOffset = (localIdx - 0.5) * barSpacing;
+        bar.position.set(blockX + xOffset, embeddingY, 0);
+        group.add(bar);
+
+        // Draw arrow from embedding bar down to conv block
+        const arrow = createArrow(
+          new THREE.Vector3(blockX + xOffset, embeddingY - height / 2 - 0.1, 0),
+          new THREE.Vector3(blockX + xOffset, 1.5, 0),
+          0x888888
+        );
+        group.add(arrow);
+      }
     }
+
+    // Label for the embedding bars
+    const embLabel = createTextSprite('Embedding → Blocks', 0.2, '#00ff99');
+    embLabel.position.set((positions.afterInputConv + positions.afterDecoder) / 2, embeddingY + 0.8, 0);
+    group.add(embLabel);
   }
 
   // Input
