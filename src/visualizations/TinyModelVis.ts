@@ -504,20 +504,13 @@ function createArrow(
 }
 
 /**
- * Create a curved skip connection
+ * Create a straight skip connection line
  */
 function createSkipConnection(
   from: THREE.Vector3,
-  to: THREE.Vector3,
-  height: number = 3
+  to: THREE.Vector3
 ): THREE.Line {
-  const curve = new THREE.QuadraticBezierCurve3(
-    from,
-    new THREE.Vector3((from.x + to.x) / 2, from.y + height, from.z),
-    to
-  );
-  
-  const points = curve.getPoints(50);
+  const points = [from, to];
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineDashedMaterial({
     color: 0xff00ff,
@@ -525,10 +518,10 @@ function createSkipConnection(
     gapSize: 0.1,
     linewidth: 2,
   });
-  
+
   const line = new THREE.Line(geometry, material);
   line.computeLineDistances();
-  
+
   return line;
 }
 
@@ -557,19 +550,8 @@ export function createTinyUNetVisualization(
     output: spacing * 2.8,
   };
   
-  // ===== TIME EMBEDDING MLP (horizontal, above U-Net) =====
-  if (config.showTimeEmbedding) {
-    // Note: This static visualization shows structure only, not actual forward pass values
-    // The cnoise value shown is just for reference (computed from timestep = 0.5)
-    const referenceTimestep = 0.5;
-    const referenceCnoise = 0.25 * Math.log(Math.max(referenceTimestep, 1e-6));
-
-    const timeVis = createTimeEmbedMLPHorizontalVis(model.timeEmbedMLP, referenceCnoise, config);
-    // Position above and centered relative to the conv blocks
-    const mlpCenterX = (positions.inputConv + positions.decoder) / 2 - 2.5;
-    timeVis.position.set(mlpCenterX, 5, 0);
-    group.add(timeVis);
-  }
+  // TIME EMBEDDING MLP is added in createTinyUNetWithActivations
+  // to show actual forward pass values, not here
   
   // ===== INPUT CONV =====
   const inputConvVis = createConvLayerVis(model.inputConv, config);
@@ -640,19 +622,18 @@ export function createTinyUNetVisualization(
   if (config.showSkipConnection) {
     const skipLine = createSkipConnection(
       new THREE.Vector3(positions.encoder + 1, 1, 0),
-      new THREE.Vector3(positions.skipConcat, 0.5, 0),
-      2.5
+      new THREE.Vector3(positions.skipConcat, 1, 0)
     );
     group.add(skipLine);
-    
+
     const skipLabel = createTextSprite('skip', 0.2, '#ff00ff');
-    skipLabel.position.set((positions.encoder + positions.skipConcat) / 2, 3.5, 0);
+    skipLabel.position.set((positions.encoder + positions.skipConcat) / 2, 1.3, 0);
     group.add(skipLabel);
   }
   
   // ===== TITLE =====
   const title = createTextSprite('U-Net', 0.5, '#00ffff');
-  title.position.set(0, 6, 0);
+  title.position.set(0, 7, 0);
   group.add(title);
   
   return group;
