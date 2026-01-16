@@ -70,7 +70,7 @@ function createTextSprite(
 function weightToColor(value: number, config: TinyVisConfig): THREE.Color {
   const absVal = Math.min(Math.abs(value), 1);
   // Keep minimum brightness but allow stronger highlights for large magnitudes
-  const intensity = Math.min(1.2, 0.55 + 0.8 * absVal);
+  const intensity = Math.min(1.2, 1.0 + 0.8 * absVal);
   
   if (value >= 0) {
     // Positive: bright cyan-blue
@@ -106,7 +106,7 @@ function createWeightCube(
   config: TinyVisConfig
 ): THREE.Mesh {
   // Minimum size so all weights are visible
-  const size = config.kernelScale * (0.6 + 0.4 * Math.min(Math.abs(value), 1));
+  const size = config.kernelScale * (0.2 + 0.8 * Math.min(Math.abs(value), 1));
   const geometry = new THREE.BoxGeometry(size, size, size);
   const color = weightToColor(value, config);
   
@@ -177,7 +177,8 @@ function createConvLayerVis(
   // Bias visualization (small spheres below kernels)
   for (let oc = 0; oc < layer.outChannels; oc++) {
     const biasColor = weightToColor(layer.bias[oc], config);
-    const biasGeo = new THREE.SphereGeometry(config.kernelScale * 0.4, 12, 12);
+    const biasSize = config.kernelScale * (0.2 + 0.8 * Math.min(Math.abs(layer.bias[oc]), 1));
+    const biasGeo = new THREE.SphereGeometry(biasSize, 12, 12);
     const biasMat = new THREE.MeshStandardMaterial({
       color: biasColor,
       metalness: 0.1,
@@ -461,7 +462,7 @@ export function createTinyUNetVisualization(
   
   // ===== UPSAMPLE INDICATOR =====
   const upLabel = createTextSprite('↑2×', 0.4, '#00ff99');
-  upLabel.position.set(positions.upsample, -1, 0);
+  upLabel.position.set(positions.upsample, 0, 0);
   group.add(upLabel);
   
   // ===== SKIP CONCAT INDICATOR =====
@@ -485,17 +486,19 @@ export function createTinyUNetVisualization(
     const arrows = [
       { from: positions.inputConv + 1.5, to: positions.encoder - 1.5 },
       { from: positions.encoder + 1.5, to: positions.downsample - 0.5 },
-      { from: positions.downsample + 0.5, to: positions.bottleneck - 1.5, y: -1 },
-      { from: positions.bottleneck + 1.5, to: positions.upsample - 0.5, y: -1.5 },
-      { from: positions.upsample + 0.5, to: positions.skipConcat - 0.5, y: -0.5 },
+      { from: positions.downsample + 0.5, to: positions.bottleneck - 0.5, y: 0, yEnd: -2 },
+      { from: positions.bottleneck + 0.5, to: positions.upsample - 0.5, y: -2, yEnd: 0 },
+      { from: positions.upsample + 0.5, to: positions.skipConcat - 0.5 },
       { from: positions.skipConcat + 0.5, to: positions.decoder - 1.5 },
       { from: positions.decoder + 1.5, to: positions.output - 1.5 },
     ];
     
     for (const arrow of arrows) {
+      const startY = arrow.y ?? arrowY;
+      const endY = (arrow as any).yEnd ?? startY;
       const arrowVis = createArrow(
-        new THREE.Vector3(arrow.from, arrow.y ?? arrowY, 0),
-        new THREE.Vector3(arrow.to, arrow.y ?? arrowY, 0),
+        new THREE.Vector3(arrow.from, startY, 0),
+        new THREE.Vector3(arrow.to, endY, 0),
         0x666666
       );
       group.add(arrowVis);
@@ -517,7 +520,7 @@ export function createTinyUNetVisualization(
   }
   
   // ===== TITLE =====
-  const title = createTextSprite('Tiny U-Net (~193 params)', 0.5, '#00ffff');
+  const title = createTextSprite('U-Net', 0.5, '#00ffff');
   title.position.set(0, 6, 0);
   group.add(title);
   
