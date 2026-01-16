@@ -233,7 +233,7 @@ function createLinearLayerVis(
 
   // Visualize weights as small cubes in a grid
   const cubeSize = 0.15;
-  const spacing = 0.25;
+  const spacing = config.kernelScale * 1.2; // Match conv block spacing
 
   if (horizontal) {
     // Horizontal layout: x = output dim, y = input dim (swapped for wider layout)
@@ -348,7 +348,7 @@ function createTimeEmbedMLPHorizontalVis(
   cnoiseBar.position.set(xPos, 0, 0);
   group.add(cnoiseBar);
 
-  xPos += layerSpacing;
+  xPos += layerSpacing + 0.5; // Add extra space for arrow
 
   // ===== HIDDEN LAYER (horizontal layout) =====
   const hiddenVis = createLinearLayerVis(mlp.hiddenLayer, config, 'Hidden', true);
@@ -357,23 +357,23 @@ function createTimeEmbedMLPHorizontalVis(
 
   // Arrow from cnoise to hidden
   const arrow1 = createArrow(
-    new THREE.Vector3(xPos - layerSpacing + 0.3, 0, 0),
-    new THREE.Vector3(xPos - 0.8, 0, 0),
+    new THREE.Vector3(xPos - layerSpacing - 0.5 + 0.3, 0, 0),
+    new THREE.Vector3(xPos - 1.0, 0, 0),
     0x666666
   );
   group.add(arrow1);
 
-  xPos += layerSpacing;
+  xPos += layerSpacing + 2.0; // Add extra space after arrow
 
   // ===== OUTPUT LAYER (horizontal layout) =====
   const outputVis = createLinearLayerVis(mlp.outputLayer, config, 'Emb', true);
   outputVis.position.set(xPos, 0, 0);
   group.add(outputVis);
 
-  // Arrow from hidden to output
+  // Arrow from hidden to output (starts from end of hidden layer)
   const arrow2 = createArrow(
-    new THREE.Vector3(xPos - layerSpacing + 0.8, 0, 0),
-    new THREE.Vector3(xPos - 1.2, 0, 0),
+    new THREE.Vector3(xPos - layerSpacing - 2.0 + 1.2, 0, 0),
+    new THREE.Vector3(xPos - 2.0, 0, 0),
     0x666666
   );
   group.add(arrow2);
@@ -671,7 +671,7 @@ export function createTinyUNetWithActivations(
   if (config.showTimeEmbedding) {
     // Horizontal MLP visualization above the U-Net
     const actualTimeVis = createTimeEmbedMLPHorizontalVis(model.timeEmbedMLP, state.cnoise, config);
-    const mlpCenterX = (positions.afterInputConv + positions.afterDecoder) / 2 - 2.5;
+    const mlpCenterX = (positions.afterInputConv + positions.afterDecoder) / 2 - 15.0; // Shifted far left
     actualTimeVis.position.set(mlpCenterX, 5, 0);
     group.add(actualTimeVis);
 
@@ -776,15 +776,6 @@ export function createTinyUNetWithActivations(
   const outputVis = createActivationVis(state.output, config, 'output');
   outputVis.position.set(positions.output, actY, 0);
   group.add(outputVis);
-
-  // Timestep and cnoise indicators (top right)
-  const timeLabel = createTextSprite(
-    `σ = ${state.timestep.toFixed(3)} | cnoise = ${state.cnoise.toFixed(3)}`,
-    0.3,
-    '#ffaa00'
-  );
-  timeLabel.position.set(positions.output, 5, 0);
-  group.add(timeLabel);
 
   return group;
 }
