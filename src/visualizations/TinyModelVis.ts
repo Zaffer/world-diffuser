@@ -227,12 +227,12 @@ function createLinearLayerVis(
   const group = new THREE.Group();
 
   // Title
-  const title = createTextSprite(label, 0.25, '#ffaa00');
-  title.position.set(0, horizontal ? 0.8 : 1.5, 0);
+  const title = createTextSprite(label, horizontal ? 0.35 : 0.25, '#ffaa00');  // Larger for horizontal
+  title.position.set(0, horizontal ? 1.2 : 1.5, 0);  // Moved up for horizontal
   group.add(title);
 
   // Visualize weights as small cubes in a grid
-  const cubeSize = 0.15;
+  const cubeSize = horizontal ? 0.2 : 0.15;  // Larger cubes for horizontal layout
   const spacing = config.kernelScale * 1.2; // Match conv block spacing
 
   if (horizontal) {
@@ -266,10 +266,10 @@ function createLinearLayerVis(
     // Dimension label below
     const dimLabel = createTextSprite(
       `${layer.inputDim}→${layer.outputDim}`,
-      0.18,
+      0.25,  // Increased from 0.18
       '#888888'
     );
-    dimLabel.position.set(0, -0.6, 0);
+    dimLabel.position.set(0, -0.8, 0);  // Moved down slightly
     group.add(dimLabel);
   } else {
     // Original vertical layout
@@ -327,16 +327,16 @@ function createTimeEmbedMLPHorizontalVis(
   // ===== CNOISE VALUE =====
   const cnoiseLabel = createTextSprite(
     `cnoise = ${cnoise.toFixed(3)}`,
-    0.25,
+    0.35,  // Increased from 0.25
     '#ffaa00'
   );
-  cnoiseLabel.position.set(xPos, 0.8, 0);
+  cnoiseLabel.position.set(xPos, 1.2, 0);  // Moved up from 0.8
   group.add(cnoiseLabel);
 
-  // Visualize cnoise as a colored bar
+  // Visualize cnoise as a colored bar (larger)
   const cnoiseColor = weightToColor(cnoise, config);
-  const cnoiseHeight = Math.abs(cnoise) * 1.2 + 0.3;
-  const cnoiseGeo = new THREE.BoxGeometry(0.25, cnoiseHeight, 0.25);
+  const cnoiseHeight = Math.abs(cnoise) * 1.8 + 0.5;  // Increased from 1.2 + 0.3
+  const cnoiseGeo = new THREE.BoxGeometry(0.4, cnoiseHeight, 0.4);  // Increased from 0.25
   const cnoiseMat = new THREE.MeshStandardMaterial({
     color: cnoiseColor,
     metalness: 0.1,
@@ -727,7 +727,7 @@ export function createTinyUNetWithActivations(
     }
 
     // Label for the embedding bars
-    const embLabel = createTextSprite('Embedding → Blocks', 0.2, '#00ff99');
+    const embLabel = createTextSprite('Embedding → Blocks', 0.3, '#00ff99');  // Increased from 0.2
     embLabel.position.set((positions.afterInputConv + positions.afterDecoder) / 2, embeddingY + 0.8, 0);
     group.add(embLabel);
   }
