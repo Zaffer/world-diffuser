@@ -20,14 +20,37 @@ export interface TinyConvLayer {
   outChannels: number;
   kernels: Kernel3x3[][]; // [outChannels][inChannels]
   bias: number[];         // [outChannels]
+  projection?: BlockProjection; // Optional per-block time conditioning
 }
 
 /**
- * Time embedding layer (simple linear projection)
+ * Linear layer for MLP
  */
-export interface TimeEmbedding {
-  weights: number[];  // [outputDim] - single input, multiple outputs
-  bias: number[];     // [outputDim]
+export interface LinearLayer {
+  weights: number[][]; // [outputDim][inputDim]
+  bias: number[];      // [outputDim]
+  inputDim: number;
+  outputDim: number;
+}
+
+/**
+ * Time embedding MLP following EDM/DIAMOND architecture
+ * Uses cnoise(σ) = 0.25 * ln(σ) as input (fixed formula, not learned)
+ * Then passes through a 2-layer MLP to create shared time embedding
+ */
+export interface TimeEmbeddingMLP {
+  hiddenLayer: LinearLayer;   // cnoise → hidden (e.g., 1 → 4)
+  outputLayer: LinearLayer;   // hidden → embedding (e.g., 4 → 8)
+}
+
+/**
+ * Per-block projection layer
+ * Projects shared time embedding to block-specific conditioning
+ */
+export interface BlockProjection {
+  weights: number[][]; // [outputDim][embeddingDim]
+  bias: number[];      // [outputDim]
+  embeddingDim: number;
   outputDim: number;
 }
 
@@ -42,34 +65,38 @@ export interface ActivationTensor {
 }
 
 /**
- * Complete tiny U-Net model
- * 
+ * Complete tiny U-Net model with EDM-style time conditioning
+ *
  * Architecture:
  * - Input: 2×2 grayscale (1 channel)
  * - Channels: 1 → 2 → 2 → 2 → 1
  * - Single encoder/decoder stage
  * - Skip connection from encoder to decoder
- * 
- * Total weights breakdown:
- * - timeEmbed: 2 weights + 2 bias = 4
+ * - EDM time conditioning: σ → cnoise(σ) → MLP → per-block projections
+ *
+ * Total weights breakdown (approximate):
+ * - timeEmbedMLP:
+ *   - hidden: 1×4 + 4 bias = 8
+ *   - output: 4×8 + 8 bias = 40
+ * - Per-block projections (4 blocks × 8→2): 4 × (8×2 + 2) = 72
  * - inputConv: 1×2×9 + 2 bias = 20
  * - encoderConv: 2×2×9 + 2 bias = 38
  * - bottleneckConv: 2×2×9 + 2 bias = 38
  * - decoderConv: 4×2×9 + 2 bias = 74 (4 in due to skip concat)
  * - outputConv: 2×1×9 + 1 bias = 19
- * 
- * Total: ~193 weights
+ *
+ * Total: ~309 weights
  */
 export interface TinyUNet {
-  // Time embedding
-  timeEmbed: TimeEmbedding;
-  
-  // Main path
+  // Time embedding MLP (shared across all blocks)
+  timeEmbedMLP: TimeEmbeddingMLP;
+
+  // Main path (now with per-block projections)
   inputConv: TinyConvLayer;    // 1ch → 2ch
   encoderConv: TinyConvLayer;  // 2ch → 2ch
   bottleneckConv: TinyConvLayer; // 2ch → 2ch (at 1×1 spatial)
   decoderConv: TinyConvLayer;  // 4ch → 2ch (after skip concat)
-  outputConv: TinyConvLayer;   // 2ch → 1ch
+  outputConv: TinyConvLayer;   // 2ch → 1ch (no time conditioning)
 }
 
 /**
@@ -78,8 +105,13 @@ export interface TinyUNet {
 export interface ForwardPassState {
   // Input
   noisyInput: ActivationTensor;     // 2×2×1
-  timestep: number;                  // scalar t ∈ [0, 1]
-  
+  timestep: number;                  // scalar σ (noise level) ∈ [0, 1]
+
+  // Time conditioning (for visualization)
+  cnoise: number;                    // Computed cnoise(σ) = 0.25 * ln(σ)
+  mlpHidden: number[];               // Hidden layer activations
+  sharedEmbedding: number[];         // Output of shared MLP
+
   // After each layer
   afterInputConv: ActivationTensor;  // 2×2×2
   afterEncoder: ActivationTensor;    // 2×2×2 (saved for skip)

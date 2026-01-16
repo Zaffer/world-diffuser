@@ -6,7 +6,9 @@
 import {
   TinyUNet,
   TinyConvLayer,
-  TimeEmbedding,
+  TimeEmbeddingMLP,
+  LinearLayer,
+  BlockProjection,
   Kernel3x3,
   ActivationTensor,
   ForwardPassState,
@@ -63,31 +65,87 @@ function createTinyConvLayer(
 }
 
 /**
- * Create time embedding layer
+ * Create a linear layer with Xavier initialization
  */
-function createTimeEmbedding(outputDim: number): TimeEmbedding {
-  const weights: number[] = [];
-  const bias: number[] = [];
-  
-  for (let i = 0; i < outputDim; i++) {
-    weights.push(xavierInit(1, outputDim));
-    bias.push(0);
+function createLinearLayer(inputDim: number, outputDim: number): LinearLayer {
+  const weights: number[][] = [];
+
+  for (let o = 0; o < outputDim; o++) {
+    const row: number[] = [];
+    for (let i = 0; i < inputDim; i++) {
+      row.push(xavierInit(inputDim, outputDim));
+    }
+    weights.push(row);
   }
-  
-  return { weights, bias, outputDim };
+
+  const bias = new Array(outputDim).fill(0);
+
+  return { weights, bias, inputDim, outputDim };
 }
 
 /**
- * Create the complete tiny U-Net model
+ * Create time embedding MLP (EDM-style)
+ * Takes cnoise(σ) as input (scalar) and outputs shared embedding
+ */
+function createTimeEmbeddingMLP(hiddenDim: number, embeddingDim: number): TimeEmbeddingMLP {
+  return {
+    hiddenLayer: createLinearLayer(1, hiddenDim),
+    outputLayer: createLinearLayer(hiddenDim, embeddingDim),
+  };
+}
+
+/**
+ * Create a per-block projection layer
+ */
+function createBlockProjection(embeddingDim: number, outputDim: number): BlockProjection {
+  const weights: number[][] = [];
+
+  for (let o = 0; o < outputDim; o++) {
+    const row: number[] = [];
+    for (let i = 0; i < embeddingDim; i++) {
+      row.push(xavierInit(embeddingDim, outputDim));
+    }
+    weights.push(row);
+  }
+
+  const bias = new Array(outputDim).fill(0);
+
+  return { weights, bias, embeddingDim, outputDim };
+}
+
+/**
+ * Create the complete tiny U-Net model with EDM-style time conditioning
  */
 export function createTinyUNet(): TinyUNet {
+  // Shared time embedding MLP
+  const hiddenDim = 4;
+  const embeddingDim = 8;
+  const timeEmbedMLP = createTimeEmbeddingMLP(hiddenDim, embeddingDim);
+
+  // Create conv layers with per-block projections
+  // Each block gets conditioning of size = outChannels
+  const inputConv = createTinyConvLayer('inputConv', 1, 2);
+  inputConv.projection = createBlockProjection(embeddingDim, 2);
+
+  const encoderConv = createTinyConvLayer('encoderConv', 2, 2);
+  encoderConv.projection = createBlockProjection(embeddingDim, 2);
+
+  const bottleneckConv = createTinyConvLayer('bottleneckConv', 2, 2);
+  bottleneckConv.projection = createBlockProjection(embeddingDim, 2);
+
+  const decoderConv = createTinyConvLayer('decoderConv', 4, 2); // 4 = 2 + 2 skip
+  decoderConv.projection = createBlockProjection(embeddingDim, 2);
+
+  // Output layer has no time conditioning (following typical U-Net design)
+  const outputConv = createTinyConvLayer('outputConv', 2, 1);
+
   return {
-    timeEmbed: createTimeEmbedding(2),
-    inputConv: createTinyConvLayer('inputConv', 1, 2),
-    encoderConv: createTinyConvLayer('encoderConv', 2, 2),
-    bottleneckConv: createTinyConvLayer('bottleneckConv', 2, 2),
-    decoderConv: createTinyConvLayer('decoderConv', 4, 2), // 4 = 2 + 2 skip
-    outputConv: createTinyConvLayer('outputConv', 2, 1),
+    timeEmbedMLP,
+    inputConv,
+    encoderConv,
+    bottleneckConv,
+    decoderConv,
+    outputConv,
   };
 }
 
@@ -96,11 +154,12 @@ export function createTinyUNet(): TinyUNet {
  */
 export function countParameters(model: TinyUNet): number {
   let count = 0;
-  
-  // Time embedding
-  count += model.timeEmbed.weights.length;
-  count += model.timeEmbed.bias.length;
-  
+
+  // Time embedding MLP
+  const { hiddenLayer, outputLayer } = model.timeEmbedMLP;
+  count += hiddenLayer.inputDim * hiddenLayer.outputDim + hiddenLayer.bias.length;
+  count += outputLayer.inputDim * outputLayer.outputDim + outputLayer.bias.length;
+
   // Conv layers
   const convLayers = [
     model.inputConv,
@@ -109,18 +168,96 @@ export function countParameters(model: TinyUNet): number {
     model.decoderConv,
     model.outputConv,
   ];
-  
+
   for (const layer of convLayers) {
     // Kernels: outChannels × inChannels × 3 × 3
     count += layer.outChannels * layer.inChannels * 9;
     // Bias: outChannels
     count += layer.outChannels;
+
+    // Per-block projection (if present)
+    if (layer.projection) {
+      count += layer.projection.embeddingDim * layer.projection.outputDim;
+      count += layer.projection.bias.length;
+    }
   }
-  
+
   return count;
 }
 
 // ============ FORWARD PASS IMPLEMENTATION ============
+
+/**
+ * Compute cnoise from noise level σ using EDM formula
+ * cnoise(σ) = 0.25 * ln(σ)
+ */
+function computeCnoise(sigma: number): number {
+  // Clamp sigma to avoid log(0)
+  const clampedSigma = Math.max(sigma, 1e-6);
+  return 0.25 * Math.log(clampedSigma);
+}
+
+/**
+ * Apply a linear layer: y = Wx + b
+ */
+function applyLinear(input: number[], layer: LinearLayer): number[] {
+  const output: number[] = [];
+
+  for (let o = 0; o < layer.outputDim; o++) {
+    let sum = layer.bias[o];
+    for (let i = 0; i < layer.inputDim; i++) {
+      sum += layer.weights[o][i] * input[i];
+    }
+    output.push(sum);
+  }
+
+  return output;
+}
+
+/**
+ * SiLU activation (x * sigmoid(x)) for arrays
+ */
+function applySiLUArray(input: number[]): number[] {
+  return input.map(x => {
+    const sigmoid = 1 / (1 + Math.exp(-x));
+    return x * sigmoid;
+  });
+}
+
+/**
+ * Run the time embedding MLP
+ * Input: cnoise (scalar) -> Hidden (with SiLU) -> Output
+ */
+function runTimeEmbeddingMLP(cnoise: number, mlp: TimeEmbeddingMLP): {
+  hidden: number[];
+  embedding: number[];
+} {
+  // Hidden layer with SiLU activation
+  const hidden = applyLinear([cnoise], mlp.hiddenLayer);
+  const hiddenActivated = applySiLUArray(hidden);
+
+  // Output layer (no activation)
+  const embedding = applyLinear(hiddenActivated, mlp.outputLayer);
+
+  return { hidden, embedding };
+}
+
+/**
+ * Apply block projection to shared embedding
+ */
+function applyBlockProjection(embedding: number[], projection: BlockProjection): number[] {
+  const output: number[] = [];
+
+  for (let o = 0; o < projection.outputDim; o++) {
+    let sum = projection.bias[o];
+    for (let i = 0; i < projection.embeddingDim; i++) {
+      sum += projection.weights[o][i] * embedding[i];
+    }
+    output.push(sum);
+  }
+
+  return output;
+}
 
 /**
  * Create an empty activation tensor
@@ -265,36 +402,35 @@ function concat(a: ActivationTensor, b: ActivationTensor): ActivationTensor {
 }
 
 /**
- * Add time embedding to activations (broadcast across spatial dims)
+ * Add per-block time conditioning to activations
+ * Takes the shared embedding and projects it via block-specific layer,
+ * then broadcasts across spatial dimensions
  */
-function addTimeEmbedding(
+function addBlockConditioning(
   input: ActivationTensor,
-  timeEmbed: TimeEmbedding,
-  timestep: number
+  sharedEmbedding: number[],
+  projection: BlockProjection
 ): ActivationTensor {
   const output = createActivationTensor(input.channels, input.height, input.width);
-  
-  // Compute time embedding: t * weights + bias
-  const embedding: number[] = [];
-  for (let i = 0; i < timeEmbed.outputDim; i++) {
-    embedding.push(timestep * timeEmbed.weights[i] + timeEmbed.bias[i]);
-  }
-  
+
+  // Project shared embedding to block-specific conditioning
+  const conditioning = applyBlockProjection(sharedEmbedding, projection);
+
   // Add to each spatial position
   for (let c = 0; c < input.channels; c++) {
-    const embVal = c < embedding.length ? embedding[c] : 0;
+    const condVal = c < conditioning.length ? conditioning[c] : 0;
     for (let h = 0; h < input.height; h++) {
       for (let w = 0; w < input.width; w++) {
-        output.data[c][h][w] = input.data[c][h][w] + embVal;
+        output.data[c][h][w] = input.data[c][h][w] + condVal;
       }
     }
   }
-  
+
   return output;
 }
 
 /**
- * Run a complete forward pass through the tiny U-Net
+ * Run a complete forward pass through the tiny U-Net with EDM-style time conditioning
  * Returns all intermediate activations for visualization
  */
 export function forwardPass(
@@ -302,47 +438,71 @@ export function forwardPass(
   noisyInput: ActivationTensor,
   timestep: number
 ): ForwardPassState {
+  // ===== TIME CONDITIONING =====
+  // 1. Compute cnoise from noise level σ
+  const cnoise = computeCnoise(timestep);
+
+  // 2. Run through shared MLP to get embedding
+  const { hidden: mlpHidden, embedding: sharedEmbedding } = runTimeEmbeddingMLP(
+    cnoise,
+    model.timeEmbedMLP
+  );
+
+  // ===== FORWARD PASS WITH PER-BLOCK CONDITIONING =====
+
   // Input conv: 1ch → 2ch
   let x = applyConv2d(noisyInput, model.inputConv);
   x = applySiLU(x);
+  if (model.inputConv.projection) {
+    x = addBlockConditioning(x, sharedEmbedding, model.inputConv.projection);
+  }
   const afterInputConv = x;
-  
-  // Add time embedding
-  x = addTimeEmbedding(x, model.timeEmbed, timestep);
-  
+
   // Encoder conv: 2ch → 2ch
   x = applyConv2d(x, model.encoderConv);
   x = applySiLU(x);
+  if (model.encoderConv.projection) {
+    x = addBlockConditioning(x, sharedEmbedding, model.encoderConv.projection);
+  }
   const afterEncoder = x; // Save for skip connection
-  
+
   // Downsample: 2×2 → 1×1
   x = downsample2x(x);
   const afterDownsample = x;
-  
+
   // Bottleneck conv: 2ch → 2ch
   x = applyConv2d(x, model.bottleneckConv);
   x = applySiLU(x);
+  if (model.bottleneckConv.projection) {
+    x = addBlockConditioning(x, sharedEmbedding, model.bottleneckConv.projection);
+  }
   const afterBottleneck = x;
-  
+
   // Upsample: 1×1 → 2×2
   x = upsample2x(x);
   const afterUpsample = x;
-  
+
   // Skip connection: concatenate encoder output
   x = concat(x, afterEncoder);
   const afterSkipConcat = x;
-  
+
   // Decoder conv: 4ch → 2ch
   x = applyConv2d(x, model.decoderConv);
   x = applySiLU(x);
+  if (model.decoderConv.projection) {
+    x = addBlockConditioning(x, sharedEmbedding, model.decoderConv.projection);
+  }
   const afterDecoder = x;
-  
-  // Output conv: 2ch → 1ch (no activation - predict noise directly)
+
+  // Output conv: 2ch → 1ch (no activation, no conditioning)
   const output = applyConv2d(x, model.outputConv);
-  
+
   return {
     noisyInput,
     timestep,
+    cnoise,
+    mlpHidden,
+    sharedEmbedding,
     afterInputConv,
     afterEncoder,
     afterDownsample,

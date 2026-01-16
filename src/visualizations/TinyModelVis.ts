@@ -8,7 +8,9 @@ import * as THREE from 'three';
 import {
   TinyUNet,
   TinyConvLayer,
-  TimeEmbedding,
+  TimeEmbeddingMLP,
+  LinearLayer,
+  BlockProjection,
   ActivationTensor,
   ForwardPassState,
   TinyVisConfig,
@@ -213,39 +215,128 @@ function createConvLayerVis(
 }
 
 /**
- * Create time embedding visualization
+ * Create visualization for a linear layer (matrix of weights)
  */
-function createTimeEmbedVis(
-  timeEmbed: TimeEmbedding,
+function createLinearLayerVis(
+  layer: LinearLayer,
+  config: TinyVisConfig,
+  label: string
+): THREE.Group {
+  const group = new THREE.Group();
+
+  // Title
+  const title = createTextSprite(label, 0.25, '#ffaa00');
+  title.position.set(0, 1.5, 0);
+  group.add(title);
+
+  // Visualize weights as small cubes in a grid
+  const cubeSize = 0.15;
+  const spacing = 0.25;
+
+  for (let o = 0; o < layer.outputDim; o++) {
+    for (let i = 0; i < layer.inputDim; i++) {
+      const weight = layer.weights[o][i];
+      const color = weightToColor(weight, config);
+      const size = cubeSize * (0.2 + 0.8 * Math.min(Math.abs(weight), 1));
+
+      const geo = new THREE.BoxGeometry(size, size, size);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        metalness: 0.1,
+        roughness: 0.4,
+        emissive: color,
+        emissiveIntensity: 0.6,
+      });
+      const cube = new THREE.Mesh(geo, mat);
+
+      // Position in grid: x = input dim, y = output dim
+      cube.position.set(
+        (i - (layer.inputDim - 1) / 2) * spacing,
+        -(o - (layer.outputDim - 1) / 2) * spacing,
+        0
+      );
+      group.add(cube);
+    }
+  }
+
+  // Dimension label
+  const dimLabel = createTextSprite(
+    `${layer.inputDim}→${layer.outputDim}`,
+    0.2,
+    '#888888'
+  );
+  dimLabel.position.set(0, -layer.outputDim * spacing * 0.6 - 0.5, 0);
+  group.add(dimLabel);
+
+  return group;
+}
+
+/**
+ * Create time embedding MLP visualization with cnoise value
+ */
+function createTimeEmbedMLPVis(
+  mlp: TimeEmbeddingMLP,
+  cnoise: number,
   config: TinyVisConfig
 ): THREE.Group {
   const group = new THREE.Group();
-  
-  // Title
-  const title = createTextSprite('Time Embed', 0.3, '#ffaa00');
-  title.position.set(0, 1, 0);
-  group.add(title);
-  
-  // Weights as vertical bars
-  const barWidth = 0.3;
-  const barSpacing = 0.5;
-  
-  for (let i = 0; i < timeEmbed.outputDim; i++) {
-    const barColor = weightToColor(timeEmbed.weights[i], config);
-    const height = Math.abs(timeEmbed.weights[i]) * 1.5 + 0.2;
-    const geo = new THREE.BoxGeometry(barWidth, height, barWidth);
-    const mat = new THREE.MeshStandardMaterial({
-      color: barColor,
-      metalness: 0.1,
-      roughness: 0.4,
-      emissive: barColor,
-      emissiveIntensity: 0.6,
-    });
-    const bar = new THREE.Mesh(geo, mat);
-    bar.position.set((i - (timeEmbed.outputDim - 1) / 2) * barSpacing, 0, 0);
-    group.add(bar);
-  }
-  
+
+  const layerSpacing = 2;
+  let yPos = 0;
+
+  // ===== CNOISE VALUE =====
+  const cnoiseLabel = createTextSprite(
+    `cnoise = ${cnoise.toFixed(3)}`,
+    0.3,
+    '#ffaa00'
+  );
+  cnoiseLabel.position.set(0, yPos, 0);
+  group.add(cnoiseLabel);
+
+  // Visualize cnoise as a colored bar
+  const cnoiseColor = weightToColor(cnoise, config);
+  const cnoiseHeight = Math.abs(cnoise) * 1.5 + 0.3;
+  const cnoiseGeo = new THREE.BoxGeometry(0.3, cnoiseHeight, 0.3);
+  const cnoiseMat = new THREE.MeshStandardMaterial({
+    color: cnoiseColor,
+    metalness: 0.1,
+    roughness: 0.4,
+    emissive: cnoiseColor,
+    emissiveIntensity: 0.6,
+  });
+  const cnoiseBar = new THREE.Mesh(cnoiseGeo, cnoiseMat);
+  cnoiseBar.position.set(0, yPos - 0.8, 0);
+  group.add(cnoiseBar);
+
+  yPos -= layerSpacing;
+
+  // ===== HIDDEN LAYER =====
+  const hiddenVis = createLinearLayerVis(mlp.hiddenLayer, config, 'Hidden');
+  hiddenVis.position.set(0, yPos, 0);
+  group.add(hiddenVis);
+
+  yPos -= layerSpacing;
+
+  // ===== OUTPUT LAYER =====
+  const outputVis = createLinearLayerVis(mlp.outputLayer, config, 'Shared Emb');
+  outputVis.position.set(0, yPos, 0);
+  group.add(outputVis);
+
+  // Add arrows showing flow
+  const arrow1 = createArrow(
+    new THREE.Vector3(0, -0.8, 0),
+    new THREE.Vector3(0, -layerSpacing + 0.8, 0),
+    0x666666
+  );
+  group.add(arrow1);
+
+  const arrow2 = createArrow(
+    new THREE.Vector3(0, -layerSpacing - 0.8, 0),
+    new THREE.Vector3(0, -layerSpacing * 2 + 0.8, 0),
+    0x666666
+  );
+  group.add(arrow2);
+
   return group;
 }
 
@@ -425,19 +516,16 @@ export function createTinyUNetVisualization(
     output: spacing * 2.8,
   };
   
-  // ===== TIME EMBEDDING (top) =====
+  // ===== TIME EMBEDDING MLP (far left, vertical) =====
   if (config.showTimeEmbedding) {
-    const timeVis = createTimeEmbedVis(model.timeEmbed, config);
-    timeVis.position.set(positions.inputConv, 4, 0);
+    // Note: This static visualization shows structure only, not actual forward pass values
+    // The cnoise value shown is just for reference (computed from timestep = 0.5)
+    const referenceTimestep = 0.5;
+    const referenceCnoise = 0.25 * Math.log(Math.max(referenceTimestep, 1e-6));
+
+    const timeVis = createTimeEmbedMLPVis(model.timeEmbedMLP, referenceCnoise, config);
+    timeVis.position.set(-spacing * 3.5, 2, 0); // Far left, vertical column
     group.add(timeVis);
-    
-    // Arrow showing injection point
-    const timeArrow = createArrow(
-      new THREE.Vector3(positions.inputConv, 3, 0),
-      new THREE.Vector3(positions.inputConv, 1.5, 0),
-      0xffaa00
-    );
-    group.add(timeArrow);
   }
   
   // ===== INPUT CONV =====
@@ -536,12 +624,12 @@ export function createTinyUNetWithActivations(
   config: TinyVisConfig = DEFAULT_TINY_VIS_CONFIG
 ): THREE.Group {
   const group = createTinyUNetVisualization(model, config);
-  
+
   if (!config.showActivations) return group;
-  
+
   const spacing = config.layerSpacing;
   const actY = -4; // Below the weights
-  
+
   // Position activations below each layer
   const positions = {
     input: -spacing * 2.5,
@@ -554,56 +642,98 @@ export function createTinyUNetWithActivations(
     afterDecoder: spacing * 1.8,
     output: spacing * 2.8,
   };
-  
+
+  // ===== TIME CONDITIONING (replace static MLP with actual forward pass values) =====
+  if (config.showTimeEmbedding) {
+    // Remove the static time visualization and add the actual forward pass version
+    const actualTimeVis = createTimeEmbedMLPVis(model.timeEmbedMLP, state.cnoise, config);
+    actualTimeVis.position.set(-spacing * 3.5, 2, 0);
+    group.add(actualTimeVis);
+
+    // Add visualization for shared embedding output (as bars below MLP)
+    const embeddingLabel = createTextSprite('Shared Embedding', 0.2, '#00ff99');
+    embeddingLabel.position.set(-spacing * 3.5, -3, 0);
+    group.add(embeddingLabel);
+
+    // Visualize shared embedding values as small bars
+    const barSpacing = 0.2;
+    const barWidth = 0.15;
+    for (let i = 0; i < state.sharedEmbedding.length; i++) {
+      const val = state.sharedEmbedding[i];
+      const color = weightToColor(val, config);
+      const height = Math.abs(val) * 0.8 + 0.1;
+
+      const geo = new THREE.BoxGeometry(barWidth, height, barWidth);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        metalness: 0.1,
+        roughness: 0.4,
+        emissive: color,
+        emissiveIntensity: 0.6,
+      });
+      const bar = new THREE.Mesh(geo, mat);
+      bar.position.set(
+        -spacing * 3.5 + (i - (state.sharedEmbedding.length - 1) / 2) * barSpacing,
+        -3.5,
+        0
+      );
+      group.add(bar);
+    }
+  }
+
   // Input
   const inputVis = createActivationVis(state.noisyInput, config, 'input');
   inputVis.position.set(positions.input, actY, 0);
   group.add(inputVis);
-  
+
   // After input conv
   const afterInputVis = createActivationVis(state.afterInputConv, config, '');
   afterInputVis.position.set(positions.afterInputConv, actY, 0);
   group.add(afterInputVis);
-  
+
   // After encoder
   const afterEncVis = createActivationVis(state.afterEncoder, config, '');
   afterEncVis.position.set(positions.afterEncoder, actY, 0);
   group.add(afterEncVis);
-  
+
   // After downsample (smaller)
   const afterDownVis = createActivationVis(state.afterDownsample, config, '1×1');
   afterDownVis.position.set(positions.afterDownsample, actY - 2, 0);
   group.add(afterDownVis);
-  
+
   // After bottleneck
   const afterBnVis = createActivationVis(state.afterBottleneck, config, '');
   afterBnVis.position.set(positions.afterBottleneck, actY - 2, 0);
   group.add(afterBnVis);
-  
+
   // After upsample
   const afterUpVis = createActivationVis(state.afterUpsample, config, '');
   afterUpVis.position.set(positions.afterUpsample, actY - 1, 0);
   group.add(afterUpVis);
-  
+
   // After skip concat (4 channels)
   const afterConcatVis = createActivationVis(state.afterSkipConcat, config, '4ch');
   afterConcatVis.position.set(positions.afterSkipConcat, actY, 0);
   group.add(afterConcatVis);
-  
+
   // After decoder
   const afterDecVis = createActivationVis(state.afterDecoder, config, '');
   afterDecVis.position.set(positions.afterDecoder, actY, 0);
   group.add(afterDecVis);
-  
+
   // Output
   const outputVis = createActivationVis(state.output, config, 'output');
   outputVis.position.set(positions.output, actY, 0);
   group.add(outputVis);
-  
-  // Timestep indicator
-  const tLabel = createTextSprite(`t = ${state.timestep.toFixed(2)}`, 0.3, '#ffaa00');
-  tLabel.position.set(positions.input, 4, 0);
-  group.add(tLabel);
-  
+
+  // Timestep and cnoise indicators (top right)
+  const timeLabel = createTextSprite(
+    `σ = ${state.timestep.toFixed(3)} | cnoise = ${state.cnoise.toFixed(3)}`,
+    0.3,
+    '#ffaa00'
+  );
+  timeLabel.position.set(positions.output, 5, 0);
+  group.add(timeLabel);
+
   return group;
 }
